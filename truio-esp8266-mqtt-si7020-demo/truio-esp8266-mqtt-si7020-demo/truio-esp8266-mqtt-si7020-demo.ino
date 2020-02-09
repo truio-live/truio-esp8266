@@ -39,7 +39,7 @@ const char* ssid = "Insert your WiFi SSID";
 const char* password = "Insert your WiFi password";
 #define DEVICE_KEY "Insert your Device Key"
 
-const char* mqtt_server = "mqtt.truio.space";
+const char* mqtt_server = "mqtt.truio.live";
 #define MQTT_PORT 1883
 
 void callback(char* topic, byte* payload, unsigned int length);
