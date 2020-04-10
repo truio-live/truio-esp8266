@@ -26,6 +26,7 @@ unsigned long lastMillis = 0;
 bool subReceived = false; // flag to indicate subscribe payload received
 char JSONpayload[PAYLOAD_SIZE];
 StaticJsonDocument<PAYLOAD_SIZE> doc;
+StaticJsonDocument<PAYLOAD_SIZE> subDoc;
 JsonArray tag;
 
 void connect()
@@ -49,8 +50,6 @@ void connect()
   client.subscribe("TruIO/server/" DEVICE_KEY);
   // client.unsubscribe("/hello");
 }
-
-StaticJsonDocument<512> subDoc;
 
 void messageReceived(String &topic, String &payload)
 {
