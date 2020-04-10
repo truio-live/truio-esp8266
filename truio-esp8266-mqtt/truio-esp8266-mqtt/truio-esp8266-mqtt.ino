@@ -75,12 +75,11 @@ float truio_readTag(const char *tagName)
   {
     // Fetch tag element.
     JsonObject subTag = subDoc["tag"][i];
-    // If tag name is "relay", execute triggerRelay function.
+    // If tag name is "tagName", return the value.
     if (!strcmp(subTag["name"], tagName))
     {
       return subTag["value"];
     }
-    // Add checking for other tag names with the functions to execute here
   }
 }
 
@@ -154,6 +153,7 @@ void loop()
   if (subReceived == true)
   {
     subReceived = false;
+    // Example of readTag named "button" and toggle the LED_BUILTIN
     if (truio_readTag("button") > 0)
     {
       digitalWrite(LED_BUILTIN, false);
@@ -162,6 +162,10 @@ void loop()
     {
       digitalWrite(LED_BUILTIN, true);
     }
+
+    // Add your own read_Tag function
+
+    // subDoc.clear() must be at bottom here
     subDoc.clear();
   }
 }
