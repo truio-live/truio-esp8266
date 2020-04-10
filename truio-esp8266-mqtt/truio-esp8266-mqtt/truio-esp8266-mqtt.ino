@@ -12,44 +12,114 @@
 #include <MQTT.h>
 #include <ArduinoJson.h>
 
-const char ssid[] = "";
-const char pass[] = "";
-#define DEVICE_KEY ""
-const char* mqtt_server = "mqtt.truio.live";
+const char ssid[] = "";   // insert your WiFi SSID
+const char pass[] = "";   // insert your WiFi password
+#define DEVICE_KEY ""     // insert your device key
+#define PAYLOAD_SIZE 512  // 512 bytes of maximum payload
+#define PUB_INTERVAL 5000 // 5 seconds interval of publish
 
+#define mqtt_server "mqtt.truio.live" // do not change this
 WiFiClient net;
-MQTTClient client(512);
+MQTTClient client(PAYLOAD_SIZE);
 
 unsigned long lastMillis = 0;
-unsigned long lastMillis1 = 0;
-bool ledOnOff = false;
+bool subReceived = false; // flag to indicate subscribe payload received
+char JSONpayload[PAYLOAD_SIZE];
+StaticJsonDocument<PAYLOAD_SIZE> doc;
+JsonArray tag;
 
-void connect() {
-  Serial.print("checking wifi...");
-  while (WiFi.status() != WL_CONNECTED) {
+void connect()
+{
+  Serial.print("Checking wifi...");
+  while (WiFi.status() != WL_CONNECTED)
+  {
     Serial.print(".");
     delay(1000);
   }
 
-  Serial.print("\nconnecting...");
-  while (!client.connect(DEVICE_KEY, DEVICE_KEY, DEVICE_KEY)) {
+  Serial.print("\nConnecting...");
+  while (!client.connect(DEVICE_KEY, DEVICE_KEY, DEVICE_KEY))
+  {
     Serial.print(".");
     delay(1000);
   }
 
-  Serial.println("\nconnected!");
+  Serial.println("\nConnected!");
 
   client.subscribe("TruIO/server/" DEVICE_KEY);
   // client.unsubscribe("/hello");
 }
 
-void messageReceived(String &topic, String &payload) {
-  Serial.println("incoming: " + topic + " - " + payload);
+StaticJsonDocument<512> subDoc;
+
+void messageReceived(String &topic, String &payload)
+{
+  Serial.println("Incoming: " + topic + " - " + payload);
+
+  // Deserialize the JSON document
+  DeserializationError error = deserializeJson(subDoc, payload);
+
+  // Test if parsing succeeds.
+  if (error)
+  {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.c_str());
+    return;
+  }
+  // serializeJsonPretty(subDoc, Serial);
+  subReceived = true;
 }
 
-void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED_BUILTIN pin as an output
-  pinMode(13, INPUT_PULLUP);        //initialize on-board button GPIO13
+float truio_readTag(const char *tagName)
+{
+  for (int i = 0; i < subDoc["tag"].size(); i++)
+  {
+    // Fetch tag element.
+    JsonObject subTag = subDoc["tag"][i];
+    // If tag name is "relay", execute triggerRelay function.
+    if (!strcmp(subTag["name"], tagName))
+    {
+      return subTag["value"];
+    }
+    // Add checking for other tag names with the functions to execute here
+  }
+}
+
+void initJSON()
+{
+  memset(JSONpayload, 0, sizeof(JSONpayload));
+  doc["writeKey"] = DEVICE_KEY;
+  doc["op"] = "write";
+  tag = doc.createNestedArray("tag");
+}
+
+void truio_prepareTag(const char *tagName, float tagValue, int timestamp)
+{
+  JsonObject key = tag.createNestedObject();
+  key["name"] = tagName;
+  key["value"] = tagValue;
+  if (timestamp > 0)
+  {
+    key["time"] = timestamp;
+  }
+}
+
+void truio_publishTag()
+{
+  serializeJson(doc, JSONpayload);
+  serializeJsonPretty(doc, Serial);
+  client.publish("TruIO/device/" DEVICE_KEY, JSONpayload);
+
+  // clear after publish
+  memset(JSONpayload, 0, sizeof(JSONpayload));
+  doc.clear();
+  initJSON();
+}
+
+void setup()
+{
+  pinMode(LED_BUILTIN, OUTPUT); // Initialize the LED_BUILTIN pin as an JSONpayload
+  pinMode(13, INPUT_PULLUP);    //initialize on-board button GPIO13
   Serial.begin(115200);
   WiFi.begin(ssid, pass);
 
@@ -59,47 +129,40 @@ void setup() {
   client.onMessage(messageReceived);
 
   connect();
+  initJSON();
 }
 
-void loop() {
+void loop()
+{
   client.loop();
-  delay(10);  // <- fixes some issues with WiFi stability
+  delay(10); // <- fixes some issues with WiFi stability
 
-  if (!client.connected()) {
+  if (!client.connected())
+  {
     connect();
   }
 
-  if (millis() - lastMillis1 > 500) {
-    lastMillis1 = millis();
-    ledOnOff = !ledOnOff;
-    digitalWrite(LED_BUILTIN, ledOnOff);
+  // publish a message roughly every X seconds.
+  if (millis() - lastMillis > PUB_INTERVAL)
+  {
+    lastMillis = millis();
+    truio_prepareTag("humidity", 45, 0);
+    truio_prepareTag("temperature", 21, 0);
+    truio_publishTag();
   }
 
-  // publish a message roughly every second.
-  if (millis() - lastMillis > 5000) {
-    lastMillis = millis();
-
-    float humidity, temperature;
-    humidity = 50;
-    temperature = 24;
-  
-    char output[512];
-    memset(output,0,sizeof(output));
-    
-    StaticJsonDocument<512> doc;
-    doc["writeKey"] = DEVICE_KEY;
-    doc["op"] = "write";
-    JsonArray tag = doc.createNestedArray("tag");
-    JsonObject tagobj1 = tag.createNestedObject();
-    tagobj1["name"] = "humidity";
-    tagobj1["value"] = humidity;
-    JsonObject tagobj2 = tag.createNestedObject();
-    tagobj2["name"] = "temperature";
-    tagobj2["value"] = temperature;
-    
-    serializeJson(doc, output);
-    serializeJsonPretty(doc, Serial);
-    
-    client.publish("TruIO/device/" DEVICE_KEY, output);
+  // subscribed messaged to be processed here.
+  if (subReceived == true)
+  {
+    subReceived = false;
+    if (truio_readTag("button") > 0)
+    {
+      digitalWrite(LED_BUILTIN, false);
+    }
+    else
+    {
+      digitalWrite(LED_BUILTIN, true);
+    }
+    subDoc.clear();
   }
 }
